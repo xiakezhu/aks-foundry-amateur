@@ -1,0 +1,41 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: create-glm-ping-agent
+  namespace: default
+spec:
+  backoffLimit: 1
+  ttlSecondsAfterFinished: 600
+  template:
+    metadata:
+      labels:
+        azure.workload.identity/use: "true"
+    spec:
+      serviceAccountName: foundry-sa
+      restartPolicy: Never
+      containers:
+        - name: create
+          image: <acr-login-server>/foundry-control:<tag>
+          command: ["python", "-c"]
+          args:
+            - |
+              from azure.identity import DefaultAzureCredential
+              from azure.ai.projects import AIProjectClient
+              from azure.ai.projects.models import PromptAgentDefinition
+              client = AIProjectClient(
+                  endpoint="https://<foundry-account>.services.ai.azure.com/api/projects/<foundry-project>",
+                  credential=DefaultAzureCredential(),
+              )
+              ver = client.agents.create_version(
+                  agent_name="glm-ping",
+                  description="POC prompt agent using GLM flash",
+                  definition=PromptAgentDefinition(
+                      model="zai-org--glm-47-flash",
+                      instructions="You are a concise assistant. Reply in one short sentence.",
+                  ),
+              )
+              print("created glm-ping version", getattr(ver, "version", None), "status", getattr(ver, "status", None))
+              print(ver)
+          env:
+            - name: AZURE_SUBSCRIPTION_ID
+              value: "<subscription-id>"

@@ -1,0 +1,55 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: foundry-control
+  namespace: default
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: foundry-control
+  template:
+    metadata:
+      labels:
+        app: foundry-control
+        azure.workload.identity/use: "true"
+    spec:
+      serviceAccountName: foundry-sa
+      containers:
+        - name: control
+          image: <acr-login-server>/foundry-control:<tag>
+          ports:
+            - containerPort: 8080
+          env:
+            - name: AZURE_SUBSCRIPTION_ID
+              value: "<subscription-id>"
+            - name: AZURE_RESOURCE_GROUP
+              value: "<resource-group>"
+            - name: FOUNDRY_ACCOUNT_NAME
+              value: "<foundry-account>"
+            - name: FOUNDRY_LOCATION
+              value: "<location>"
+            - name: FOUNDRY_PROJECT_ENDPOINT
+              value: "https://<foundry-account>.services.ai.azure.com/api/projects/<foundry-project>"
+            - name: ACR_LOGIN_SERVER
+              value: "<acr-login-server>"
+            - name: MODEL_DEPLOYMENT_NAME
+              value: "<model-deployment-name>"
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: foundry-control
+  namespace: default
+spec:
+  selector:
+    app: foundry-control
+  ports:
+    - port: 80
+      targetPort: 8080
