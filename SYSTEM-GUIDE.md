@@ -76,7 +76,6 @@ Record these before repeating the build elsewhere.
 - **ACR Tasks may be denied**. Do not rely on `az acr build`. Build with Docker if the network allows, or with **Kaniko in AKS**.
 - **Local Docker Hub / ACR HTTPS may fail** behind a TLS-inspecting proxy. Microsoft Container Registry (`mcr.microsoft.com`) is a reliable base-image source. AKS nodes can usually pull MCR and push to ACR.
 - **Look up `AcrPull` by name** in the target subscription. The role definition GUID is not always the well-known public-cloud value. Using the wrong GUID fails with `RoleDefinitionDoesNotExist`.
-- **kubectl** to a public AKS API may require a working HTTP/HTTPS proxy. Half-configured TUN (fake DNS without a live proxy) breaks the API server.
 
 ```bash
 az role definition list --name AcrPull --query "[].name" -o tsv
