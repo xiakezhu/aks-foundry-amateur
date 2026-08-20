@@ -1,5 +1,7 @@
 # Resources and relationships
 
+**Not Work IQ.** This document is Azure AI Search / Foundry IQ (Web KB) MCP. Work IQ (Microsoft 365 mailbox/calendar OBO) is [`docs/work-iq-runbook.md`](work-iq-runbook.md). Do not reuse this Search MCP URL, admin key, or `https://search.azure.com/` audience for Work IQ.
+
 Web KB MCP = **Azure AI Search** + a **Foundry GPT** deployment. Foundry does not host the MCP URL. Search does.
 
 ## Topology
