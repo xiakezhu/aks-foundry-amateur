@@ -211,6 +211,31 @@ Use only if 1.4 fails. Create connection `workiq-a2a`, target `https://workiq.sv
 
 ---
 
+## Local dry-run (no Azure)
+
+From the repo root:
+
+```bash
+python3 -m pip install -q httpx
+cd hosted-workiq
+python3 test_toolbox_mcp.py
+python3 dry_run.py --mock
+```
+
+This does **not** call Work IQ. It checks Phase A filtering (`do_action` / `create_entity` hidden; `fetch` / `ask` kept) against a fake MCP server.
+
+Live toolbox (after Phase 1, on a laptop with `az login` and Foundry User):
+
+```bash
+export FOUNDRY_PROJECT_ENDPOINT="https://<foundry-account>.services.ai.azure.com/api/projects/<foundry-project>"
+export TOOLBOX_NAME=work-iq-toolbox
+python3 dry_run.py --live
+```
+
+`workiq-reader` is still not deployed. `hosted-workiq/main.py` is a Responses host that returns the same dry-run JSON (DeepSeek tool loop not wired).
+
+---
+
 ## Explicitly later (not Phase 0/1)
 
 - Hosted image `hosted-workiq` and agent `workiq-reader`
