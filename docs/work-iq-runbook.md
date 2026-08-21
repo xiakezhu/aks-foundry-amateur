@@ -1,5 +1,7 @@
 # Work IQ (toolbox + OBO) — Phase 0 and Phase 1
 
+Full standalone summary (including the work-account blocker): [`docs/WORK-IQ.md`](WORK-IQ.md).
+
 Operator runbook. Merging this file does **not** provision Work IQ. Do not commit tenant IDs, client secrets, subscription IDs, or connection JSON with real resource IDs.
 
 **Locked design**
@@ -11,7 +13,7 @@ Operator runbook. Merging this file does **not** provision Work IQ. Do not commi
 - Invoke `workiq-reader` as a **signed-in user** (token audience `https://ai.azure.com`). The AKS UAMI is not a mailbox user.
 - PIM is **not** required. Consent is a one-time privileged-role operation.
 
-This is **not** Foundry IQ / Azure AI Search MCP (`docs/web-kb-mcp-resources.md`).
+This is **not** Foundry IQ / Azure AI Search MCP (`docs/web-kb-mcp-resources.md`). Official MCP (Credits) vs connector (Copilot-seat) comparison: [`docs/work-iq-mcp-vs-connector.md`](work-iq-mcp-vs-connector.md).
 
 ---
 
