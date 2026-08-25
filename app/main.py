@@ -49,6 +49,7 @@ class CreateAgentRequest(BaseModel):
     memory: str = "2Gi"
     protocol: str = "responses"
     wait: bool = True
+    environment_variables: Optional[dict[str, str]] = None
 
 
 class ChatRequest(BaseModel):
@@ -152,7 +153,7 @@ def get_agent(name: str, project_endpoint: Optional[str] = None):
 
 @app.post("/agents")
 def create_agent(body: CreateAgentRequest):
-    image = body.image or (f"{ACR_LOGIN_SERVER}/hosted-echo:v1" if ACR_LOGIN_SERVER else None)
+    image = body.image or (f"{ACR_LOGIN_SERVER}/hosted-pi-agent:v1" if ACR_LOGIN_SERVER else None)
     if not image:
         raise HTTPException(status_code=400, detail="image is required (or set ACR_LOGIN_SERVER)")
     client = project_client(body.project_endpoint)
@@ -166,6 +167,7 @@ def create_agent(body: CreateAgentRequest):
                 protocol_versions=[
                     ProtocolVersionRecord(protocol=body.protocol, version="1.0.0"),
                 ],
+                environment_variables=body.environment_variables,
             ),
         )
     except Exception as exc:

@@ -1,0 +1,89 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: create-pi-example-agent
+  namespace: default
+spec:
+  backoffLimit: 1
+  ttlSecondsAfterFinished: 1800
+  template:
+    metadata:
+      labels:
+        azure.workload.identity/use: "true"
+    spec:
+      serviceAccountName: foundry-sa
+      restartPolicy: Never
+      containers:
+        - name: create
+          image: <acr-login-server>/foundry-control:<tag>
+          command: ["python", "-c"]
+          args:
+            - |
+              import os, time
+              from azure.identity import DefaultAzureCredential
+              from azure.ai.projects import AIProjectClient
+              from azure.ai.projects.models import (
+                  ContainerConfiguration,
+                  HostedAgentDefinition,
+                  ProtocolVersionRecord,
+              )
+              endpoint = os.environ["FOUNDRY_PROJECT_ENDPOINT"]
+              image = os.environ["AGENT_IMAGE"]
+              name = os.environ.get("AGENT_NAME", "pi-example")
+              client = AIProjectClient(endpoint=endpoint, credential=DefaultAzureCredential())
+              env = {
+                  "OPENAI_BASE_URL": os.environ["OPENAI_BASE_URL"],
+                  "OPENAI_API_KEY": os.environ["OPENAI_API_KEY"],
+                  "OPENAI_MODEL": os.environ["OPENAI_MODEL"],
+                  "LLM_API_KEY": os.environ["OPENAI_API_KEY"],
+              }
+              ver = client.agents.create_version(
+                  agent_name=name,
+                  description="POC Pi agent using an OpenAI-compatible endpoint",
+                  definition=HostedAgentDefinition(
+                      cpu=os.environ.get("AGENT_CPU", "2"),
+                      memory=os.environ.get("AGENT_MEMORY", "4Gi"),
+                      container_configuration=ContainerConfiguration(image=image),
+                      protocol_versions=[ProtocolVersionRecord(protocol="responses", version="1.0.0")],
+                      environment_variables=env,
+                  ),
+              )
+              version = str(getattr(ver, "version", "1"))
+              status = getattr(ver, "status", None)
+              print("created", name, "version", version, "status", status)
+              for i in range(60):
+                  current = client.agents.get_version(agent_name=name, agent_version=version)
+                  status = getattr(current, "status", None)
+                  status_s = str(status).lower() if status is not None else ""
+                  err = getattr(current, "error", None)
+                  print(i, status)
+                  if "active" in status_s:
+                      print("active", name, "version", version)
+                      break
+                  if "fail" in status_s:
+                      raise SystemExit(f"hosted agent failed: {status} {err}")
+                  time.sleep(10)
+              else:
+                  raise SystemExit(f"timed out waiting for {name} version {version}")
+          env:
+            - name: FOUNDRY_PROJECT_ENDPOINT
+              value: "https://<foundry-account>.services.ai.azure.com/api/projects/<foundry-project>"
+            - name: AGENT_IMAGE
+              value: "<acr-login-server>/hosted-pi-agent:<tag>"
+            - name: AGENT_NAME
+              value: "pi-example"
+            - name: OPENAI_BASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: pi-agent-llm
+                  key: OPENAI_BASE_URL
+            - name: OPENAI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: pi-agent-llm
+                  key: OPENAI_API_KEY
+            - name: OPENAI_MODEL
+              valueFrom:
+                secretKeyRef:
+                  name: pi-agent-llm
+                  key: OPENAI_MODEL

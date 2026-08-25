@@ -1,0 +1,13 @@
+{
+  "name": "hosted-pi-agent",
+  "private": true,
+  "type": "module",
+  "description": "Minimal Pi agent for Foundry hosted agents",
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {
+    "@earendil-works/pi-agent-core": "^0.83.0",
+    "@earendil-works/pi-ai": "^0.83.0"
+  }
+}

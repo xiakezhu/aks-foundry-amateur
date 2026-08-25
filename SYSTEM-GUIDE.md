@@ -4,6 +4,8 @@ This document records the POC as built: an AKS service that authenticates with w
 
 Use your own values for `<subscription-id>`, `<resource-group>`, `<location>`, and resource names. Do not commit subscription IDs, resource group names, identity IDs, or registry credentials.
 
+Work IQ (Microsoft 365 context for a **future** hosted agent `workiq-reader`) is **not** in this control-service path. Phase 0–1 are in [`docs/work-iq-runbook.md`](docs/work-iq-runbook.md). That is **not** the Azure AI Search MCP in [`docs/web-kb-mcp-resources.md`](docs/web-kb-mcp-resources.md). Keep `pi-example` as the DeepSeek smoke agent; do not point it at Work IQ.
+
 ---
 
 ## 1. What the system does
@@ -32,7 +34,7 @@ POST https://<foundry-account>.services.ai.azure.com/api/projects/<foundry-proje
 
 Headers: `Authorization: Bearer <token>` (audience `https://ai.azure.com/.default`), `Foundry-Features: HostedAgents=V1Preview`.
 
-Multi-turn: send `previous_response_id` (previous response `id`) and optionally `agent_session_id`. The sample `hosted-echo` image only echoes the current input; it does not use conversation history.
+Multi-turn: send `previous_response_id` (previous response `id`) and optionally `agent_session_id`. The sample `hosted-pi-agent` image is a small Pi agent that calls an OpenAI-compatible endpoint (`OPENAI_BASE_URL`, `OPENAI_API_KEY` / `LLM_API_KEY`, `OPENAI_MODEL`). It keeps per-session history in the container when `agent_session_id` is present.
 
 ---
 
@@ -56,11 +58,11 @@ UAMI  <uami-name>
 Foundry account  <foundry-account>
   project        <foundry-project>
     prompt agent     <prompt-agent-name>
-    hosted agent     <hosted-agent-name>    (image: <acr-login-server>/hosted-echo:<tag>)
+    hosted agent     <hosted-agent-name>    (image: <acr-login-server>/hosted-pi-agent:<tag>)
 
 ACR  <acr-name>
   foundry-control:<tag>
-  hosted-echo:<tag>
+  hosted-pi-agent:<tag>
 ```
 
 Authentication path: pod label `azure.workload.identity/use: "true"` → SA annotation `azure.workload.identity/client-id` → federated credential on the UAMI (`issuer` = AKS OIDC, `subject` = `system:serviceaccount:default:foundry-sa`).
@@ -118,7 +120,7 @@ Read the UAMI client id after create (`az identity show --query clientId`). Do n
 |---|---|---|
 | ServiceAccount | `default/foundry-sa` | Workload identity; annotation `azure.workload.identity/client-id` |
 | Deployment / Service | `foundry-control` | Control API, ClusterIP port 80 → 8080 |
-| Images | `foundry-control:<tag>`, `hosted-echo:<tag>` | Built in-cluster with Kaniko if needed |
+| Images | `foundry-control:<tag>`, `hosted-pi-agent:<tag>` | Built in-cluster with Kaniko if needed |
 | Agents in Foundry | prompt agent + hosted agent | Created by Jobs / `POST /agents` |
 
 ---
@@ -310,13 +312,13 @@ If `az acr build` is blocked and the laptop cannot push to ACR, build **inside A
 1. Enable ACR admin temporarily; store credentials in a `kubernetes.io/dockerconfigjson` secret (do not commit passwords).
 2. Put `Dockerfile`, `requirements.txt`, and `main.py` in a ConfigMap.
 3. Copy ConfigMap files into an `emptyDir` (ConfigMap mounts are not regular files for Kaniko `COPY`).
-4. Kaniko destination: `<acr-login-server>/foundry-control:<tag>` and `<acr-login-server>/hosted-echo:<tag>`.
-5. Base image: `mcr.microsoft.com/devcontainers/python:3.12` if Docker Hub is unreachable.
+4. Kaniko destination: `<acr-login-server>/foundry-control:<tag>` and `<acr-login-server>/hosted-pi-agent:<tag>`.
+5. Base images: `mcr.microsoft.com/devcontainers/python:3.12` (control) and `mcr.microsoft.com/devcontainers/javascript-node:22` (hosted Pi agent) if Docker Hub is unreachable.
 
 Repo layout:
 
 - `app/` — FastAPI control service (`azure-identity`, `azure-mgmt-cognitiveservices`, `azure-ai-projects`, `httpx`)
-- `hosted-agent/` — Responses-protocol echo (`azure-ai-agentserver-responses`), listens as the host library expects (port 8088)
+- `hosted-agent/` — Foundry Responses host wrapping a Pi agent (`@earendil-works/pi-agent-core`) that calls an OpenAI-compatible endpoint. Listens as the host library expects (port 8088). Pass `OPENAI_BASE_URL`, `OPENAI_API_KEY`, and `OPENAI_MODEL` as hosted-agent `environment_variables`. Do not bake keys into the image.
 
 ### 6.6 Deploy the control service
 
@@ -343,10 +345,18 @@ kubectl port-forward svc/foundry-control 8081:80
 # health
 curl -sS http://127.0.0.1:8081/health
 
-# create hosted agent (image pull + provision; wait until active)
+# create hosted Pi agent (image pull + provision; wait until active)
 curl -sS -X POST http://127.0.0.1:8081/agents \
   -H 'Content-Type: application/json' \
-  -d '{"name":"<hosted-agent-name>","image":"<acr-login-server>/hosted-echo:<tag>"}'
+  -d '{
+    "name":"<hosted-agent-name>",
+    "image":"<acr-login-server>/hosted-pi-agent:<tag>",
+    "environment_variables": {
+      "OPENAI_BASE_URL": "<openai-compatible-base-url>",
+      "OPENAI_API_KEY": "<openai-compatible-api-key>",
+      "OPENAI_MODEL": "<model-id>"
+    }
+  }'
 
 # invoke
 curl -sS -X POST http://127.0.0.1:8081/agents/<hosted-agent-name>/invoke \
@@ -378,3 +388,6 @@ A prompt agent can be created with `PromptAgentDefinition` and a catalog model n
 - **Disable ACR admin** after Kaniko if policy requires it; switch Kaniko to the UAMI / `AcrPush` later.
 - New projects created by `POST /projects` need the same project-MI role grants and ACR / App Insights connections before hosted agents will start.
 - Do not commit subscription IDs, resource group names, UAMI client IDs, ACR admin passwords, or kubeconfigs.
+- Hosted-agent `environment_variables` are stored on the agent version and returned by the Foundry API. Put the OpenAI-compatible key there for this POC; do not bake it into the image. Rotate the key if it has appeared in `kubectl logs`.
+- Foundry rejects oversized images for the selected CPU tier (`ImageError`). The Pi sample image is Python 3.12 plus a Node binary and `node_modules`. Do not copy a full Node devcontainer into the runtime image. The working `pi-example` deploy used `cpu=2` / `memory=4Gi`.
+- **Work IQ** is a separate track. Do not invoke `pi-example` as a Work IQ user. See `docs/work-iq-runbook.md` (Phase 0 tenant gates, Phase 1 `workiq-mcp` connection + `work-iq-toolbox`). Hosted agent `workiq-reader` is not created in those phases.

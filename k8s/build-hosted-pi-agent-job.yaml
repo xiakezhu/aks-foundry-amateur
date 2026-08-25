@@ -1,7 +1,7 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: build-hosted-echo
+  name: build-hosted-pi-agent
   namespace: default
 spec:
   backoffLimit: 1
@@ -24,7 +24,7 @@ spec:
           args:
             - --context=dir:///workspace
             - --dockerfile=Dockerfile
-            - --destination=<acr-login-server>/hosted-echo:<tag>
+            - --destination=<acr-login-server>/hosted-pi-agent:<tag>
             - --custom-platform=linux/amd64
           volumeMounts:
             - name: ctx
@@ -34,7 +34,7 @@ spec:
       volumes:
         - name: src
           configMap:
-            name: hosted-echo-src
+            name: hosted-pi-agent-src
         - name: ctx
           emptyDir: {}
         - name: docker-config
