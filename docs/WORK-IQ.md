@@ -104,10 +104,46 @@ Do not OBO token A inside `hosted-workiq` or `pi-example`.
 | BYO Entra app | `foundry-workiq-poc` · app ID `6904f3e9-8fe0-4b9a-9b46-f6a14ecf6330` | Created, single-tenant |
 | Admin consent | Delegated `WorkIQAgent.Ask` + `offline_access` | Granted tenant-wide on the BYO app |
 | Client secret | On `foundry-workiq-poc` | Local scratch only, **not in git** |
-| Project connection | `workiq-mcp` → `https://workiq.svc.cloud.microsoft/mcp` · OAuth2 · catalog API `workiqmcp` | Created |
+| Project connection | `workiq-mcp` → `https://workiq.svc.cloud.microsoft/mcp` · OAuth2 · catalog API `workiqmcp` | Created via ARM. **`redirectUrl` is null** (see diff below). |
+| Project connection | **`WorkIQ`** → `https://workiq.svc.cloud.microsoft/a2a/` · OAuth2 · `RemoteA2A` / `work_iq_preview` | Created in the **Foundry portal**. Has a real **`redirectUrl`**. |
 | Extra connection (experiment) | `workiq-mcp-user` (UserEntraToken) | Wrong audience for Work IQ; ignore |
 | Toolbox | `work-iq-toolbox` v1 (MCP + `workiq-mcp`), default_version **1**. v2 is the failed UserEntraToken experiment | Created |
 | Hosted agent `workiq-reader` | — | **Not deployed** |
+
+### Verified: `workiq-mcp` vs portal `WorkIQ` (2026-08-25)
+
+ARM GET `…/projects/tianfu-test-proj/connections?api-version=2025-04-01-preview`.
+
+| Field | `workiq-mcp` (ARM/REST we created) | `WorkIQ` (portal, you created) |
+|---|---|---|
+| `category` | `RemoteTool` | **`RemoteA2A`** |
+| `target` | `https://workiq.svc.cloud.microsoft/mcp` | `https://workiq.svc.cloud.microsoft/a2a/` |
+| `authType` | `OAuth2` | `OAuth2` |
+| `group` | `GenericProtocol` | `AzureAI` |
+| `connectorName` | `workiqmcp` | `a7a0a32a-6849-4eb2-be9c-fd90b1d280e2-WorkIQ` |
+| `metadata` | `ConnectorName=workiqmcp` | `type=work_iq_preview`, `oAuthProvider=custom` |
+| `authorizationUrl` / `tokenUrl` / `refreshUrl` | **null** | Tenant login URLs filled |
+| `scopes` | **null** | `offline_access`, `WorkIQAgent.Ask` |
+| **`redirectUrl`** | **`null`** | **`https://global.consent.azure-apim.net/redirect/5e55c080b67c486098e95b9b8813c7eb`** |
+
+The ARM MCP connection never got Foundry’s OAuth callback, so Entra has nothing valid to whitelist for `workiq-mcp`. The portal **Work IQ** wizard fills OAuth fields **and** allocates a **per-connection** APIM redirect.
+
+That portal connection is **A2A** (`WorkIQPreviewTool` family), not the 10-verb MCP lock. Same Credits API family. To get a redirect on **MCP**, recreate **Work IQ MCP** in the portal (not ARM `RemoteTool`); expect a **different** `redirectUrl` (new GUID path).
+
+### Entra Web redirect URI (end state)
+
+Copy **`redirectUrl` from the Foundry connection you will actually use**, onto **`foundry-workiq-poc`** → Authentication → **Web**.
+
+For portal connection **`WorkIQ`** (verified):
+
+```text
+https://global.consent.azure-apim.net/redirect/5e55c080b67c486098e95b9b8813c7eb
+```
+
+- This is Foundry/APIM’s **callback** after login, not the authorize URL and not `logic-apis-….consent.azure-apim.net/login?data=…`.
+- The last path segment is **unique to this connection**. Do not reuse it for `workiq-mcp` or a recreated connection.
+- Leave Entra empty only while `redirectUrl` is null (`workiq-mcp` today).
+- Foundry **shows** the URL; Entra **must list** it. Both sides.
 
 ### Repo code
 
@@ -131,10 +167,11 @@ Do not OBO token A inside `hosted-workiq` or `pi-example`.
 
 ### B. Foundry connection + toolbox (done, consent incomplete)
 
-1. Connection `workiq-mcp` targeting `/mcp/` with BYO OAuth and `connectorName: workiqmcp`. **Done.**
-2. Toolbox `work-iq-toolbox` v1. **Done.**
-3. As a **work account**, `POST …/toolboxes/work-iq-toolbox/mcp` `tools/list`. Today this returns **CONSENT_REQUIRED** (Logic Apps APIM login). That login must be completed as a **work account in this tenant**, not an MSA against Microsoft Services.
-4. Then `tools/call` `fetch` `/me/messages` as that user. Pass = that user’s mail. Fail = do not put a Work IQ token in the container; A2A fallback only.
+1. Connection `workiq-mcp` targeting `/mcp/` with BYO OAuth and `connectorName: workiqmcp`. **Done via ARM; `redirectUrl` is null.**
+2. Portal connection **`WorkIQ`** (`RemoteA2A` `/a2a/`). **Has `redirectUrl`.** Put that URL on the Entra app as **Web** if you use this connection (A2A, not MCP).
+3. Toolbox `work-iq-toolbox` v1 still points at **`workiq-mcp`**. **Done.**
+4. As a **work account**, `POST …/toolboxes/work-iq-toolbox/mcp` `tools/list`. ARM MCP path returned **CONSENT_REQUIRED** (Logic Apps APIM). Complete that only as a **work account in this tenant**, not an MSA against Microsoft Services.
+5. Then `tools/call` `fetch` `/me/messages` as that user. Pass = that user’s mail. To stay on MCP with a real redirect, recreate **Work IQ MCP** in the portal and point the toolbox at that connection.
 
 Pinned admin-consent URL for **your** app **in your tenant** (not Microsoft Services):
 
