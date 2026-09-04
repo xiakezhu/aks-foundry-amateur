@@ -1,6 +1,6 @@
 # Work IQ (toolbox + OBO) — Phase 0 and Phase 1
 
-Full standalone summary (including the work-account blocker): [`docs/WORK-IQ.md`](WORK-IQ.md).
+Full standalone summary (including the work-account blocker): [`docs/WORK-IQ.md`](WORK-IQ.md). After the toolbox exists and Credits are on, testers invoke Work IQ through the toolbox MCP URL: [`docs/work-iq-invoke.md`](work-iq-invoke.md).
 
 Operator runbook. Merging this file does **not** provision Work IQ. Do not commit tenant IDs, client secrets, subscription IDs, or connection JSON with real resource IDs.
 
@@ -180,11 +180,11 @@ curl -sS -X POST \
 
 Empty list / 403: Foundry User on the caller; connection name; toolbox has a default version.
 
-This proves **agent-to-toolbox** auth. It does **not** by itself prove user mailbox OBO.
+This proves **agent-to-toolbox** auth. It does **not** by itself prove user mailbox OBO. Full tester curl (including official `entityUrls` and hosted-agent invoke): [`work-iq-invoke.md`](work-iq-invoke.md).
 
 ### 1.4 Prove user passthrough (`fetch` as the signed-in user)
 
-Still with **token A** (`https://ai.azure.com`), call `tools/call` for `fetch` on `/me/messages` (adjust tool/argument names to match `tools/list`).
+Still with **token A** (`https://ai.azure.com`), call `tools/call` for `fetch` on `/me/messages` (adjust tool/argument names to match `tools/list`; official MCP uses `entityUrls`).
 
 First call may return a **consent URL** (AADSTS65001). Complete it in the browser as the test user, then retry.
 
