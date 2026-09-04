@@ -1,6 +1,6 @@
 # Work IQ (toolbox + OBO) — Phase 0 and Phase 1
 
-Full standalone summary (including the work-account blocker): [`docs/WORK-IQ.md`](WORK-IQ.md). After the toolbox exists and Credits are on, testers and UAT users invoke Work IQ through the toolbox MCP URL: [`docs/work-iq-invoke.md`](work-iq-invoke.md) ([tester vs UAT](work-iq-invoke.md#6-test-work-iq-mcp-oauth2--tester-vs-uat-user)).
+Full standalone summary (including the work-account blocker): [`docs/WORK-IQ.md`](WORK-IQ.md). After the toolbox exists and Credits are on, testers and UAT users invoke Work IQ through the toolbox MCP URL: [`docs/work-iq-invoke.md`](work-iq-invoke.md) ([tester vs UAT](work-iq-invoke.md#6-test-work-iq-mcp-oauth2--tester-vs-uat-user), [normal-user story](work-iq-invoke.md#7-user-story--normal-user-through-the-hosted-agent)).
 
 Operator runbook. Merging this file does **not** provision Work IQ. Do not commit tenant IDs, client secrets, subscription IDs, or connection JSON with real resource IDs.
 

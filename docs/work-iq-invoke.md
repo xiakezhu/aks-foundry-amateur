@@ -398,3 +398,78 @@ UAT users should not need `az login` or toolbox JSON-RPC. If the hosted agent is
 2. UAT user opens playground as themselves.
 3. Prompt that needs M365; complete **their** consent URL; retry.
 4. Pass = **that UAT user’s** mail, and a second user still sees only their own.
+
+---
+
+## 7. User story — normal user through the hosted agent
+
+A normal user never calls Work IQ MCP, never sees the toolbox URL, and never holds token A or token B. They talk to **`{agent-name}`**. The hosted agent calls the toolbox; the toolbox (`oauth2`) calls Work IQ as **that** user.
+
+### Story
+
+**As** an employee with a work/school mailbox in this tenant  
+**I want** to ask the hosted agent about my mail, calendar, files, and chats  
+**So that** answers are grounded in **my** Microsoft 365 data, not a shared service account or another person.
+
+### What the user does
+
+**Preconditions (operator, once):** `{agent-name}` is deployed and wired to `work-iq-toolbox` (`oauth2` MCP connection). The user is a Member work/school account with Exchange mail, **Foundry User** (or Agent Consumer) on the project, and Copilot Credits. They are not an MSA.
+
+**First visit**
+
+1. The user signs in to Foundry (playground) — or Teams / a company app that invokes the agent with **their** Entra token — as themselves.
+2. They open `{agent-name}` and type a normal question, for example:
+   - “What’s in my inbox today?”
+   - “What meetings do I have this afternoon?”
+   - “Summarize the latest mail from finance.”
+3. The first time this user needs Work IQ, the agent does not invent mail. It returns a **consent link** (`CONSENT_REQUIRED`). The user opens the link, signs in as **the same work account**, and finishes. This is a one-time bind for this user × this connection × this project. Admin consent does not skip it. A tester who already consented does not cover this user.
+4. The user sends the same question again (same chat if the client keeps the thread).
+5. The agent answers from **that user’s** mailbox/calendar. They do not see anyone else’s mail.
+
+**Later visits**
+
+1. Sign in as themselves → open `{agent-name}` → ask.
+2. No consent URL unless tokens were revoked, Credits/CA blocked them, or this is a new connection.
+3. Each user still only sees their own M365 data.
+
+**The user never**
+
+- Calls `https://workiq.svc.cloud.microsoft/mcp` or the toolbox `/mcp` URL
+- Runs `az login` or curl
+- Pastes a Work IQ or Foundry token into the agent
+- Uses `foundry-control` / a shared UAMI invoke and expects “my inbox”
+- Completes consent as a different account (MSA, tester, admin “clicking for them”)
+
+### What happens behind the prompt (not shown to the user)
+
+```text
+Employee  -- token A (Foundry sign-in) -->  hosted agent {agent-name}
+                                                |
+                                                | agent MI + x-agent-foundry-call-id
+                                                v
+                                           toolbox /mcp  (oauth2 connection)
+                                                |
+                                                | token B  WorkIQAgent.Ask  (that employee)
+                                                v
+                                           Work IQ MCP  →  that employee's M365
+```
+
+The model may call `fetch` / `ask` (or prefixed names). The user only sees chat. If the agent is not deployed or the DeepSeek tool loop is not wired, this story cannot run; testers use [section 1](#1-prove-mcp-through-the-toolbox-no-hosted-agent-required) instead.
+
+### Channels
+
+| Channel | User experience |
+|---|---|
+| Foundry playground (this POC) | Sign in → open `{agent-name}` → chat. First Work IQ use: consent link in the reply, then retry. |
+| App / SDK calling Responses | Same story if the **browser user**’s token A is on the invoke. A backend using its own token is that backend, not the employee. |
+| Teams / M365 (if enabled later) | User already signed in; first Work IQ use may still show the consent link once. |
+| Timer / shared service account | Out of scope — Work IQ is delegated-only. |
+
+### Acceptance (user-facing)
+
+| Expected | Not expected |
+|---|---|
+| “My inbox” matches **this** signed-in user | Tester’s or a colleague’s mail |
+| Consent once, then silent | Consent on every prompt after a successful bind |
+| Empty/403 if Credits or mail are missing | Agent MI mailbox content |
+| Refusal or policy error on writes in Phase A | Unattended send-mail with no user |

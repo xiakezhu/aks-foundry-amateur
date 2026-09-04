@@ -2,7 +2,7 @@
 
 Standalone summary of the plan, what was implemented, and what is blocked until a **work/school Microsoft 365 account** exists. No work account is available today.
 
-Related notes (optional): [runbook](work-iq-runbook.md), [invoke Work IQ MCP](work-iq-invoke.md) (includes [tester vs UAT](work-iq-invoke.md#6-test-work-iq-mcp-oauth2--tester-vs-uat-user)), [MCP vs connector](work-iq-mcp-vs-connector.md), [Search/Web KB is not Work IQ](web-kb-mcp-resources.md).
+Related notes (optional): [runbook](work-iq-runbook.md), [invoke Work IQ MCP](work-iq-invoke.md) (includes [tester vs UAT](work-iq-invoke.md#6-test-work-iq-mcp-oauth2--tester-vs-uat-user) and [normal-user story](work-iq-invoke.md#7-user-story--normal-user-through-the-hosted-agent)), [MCP vs connector](work-iq-mcp-vs-connector.md), [Search/Web KB is not Work IQ](web-kb-mcp-resources.md).
 
 ---
 
@@ -154,7 +154,7 @@ https://global.consent.azure-apim.net/redirect/<a2a-redirect-guid>
 | Path | Role |
 |---|---|
 | `docs/work-iq-runbook.md` | Phase 0–1 operator steps |
-| `docs/work-iq-invoke.md` | Tester/UAT invoke: toolbox MCP then hosted agent |
+| `docs/work-iq-invoke.md` | Tester/UAT invoke + normal-user hosted-agent story |
 | `docs/work-iq-mcp-vs-connector.md` | Credits vs connector SKU |
 | `hosted-workiq/` | Toolbox MCP JSON-RPC client, Phase A allow-list, mock dry-run |
 | `k8s/build-hosted-workiq-job.yaml` | Kaniko placeholder (ACR tokens unset) |
