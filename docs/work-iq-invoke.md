@@ -309,10 +309,92 @@ Consent (`CONSENT_REQUIRED`) is handled **while the agent runs**, not at toolbox
 
 ---
 
-## Order for testers
+## 6. Test Work IQ MCP (`oauth2`) — tester vs UAT user
 
-1. Work-account `az login` (Foundry User + real mail).
+Connection auth is **OAuth identity passthrough**. Admin consent on the BYO app does **not** skip the first-use URL. Consent is **per user × connection × project**: the tester’s completed consent does **not** cover a UAT user.
+
+Shared gates (both roles):
+
+- Member **work/school** account in this Entra tenant (not an MSA / `#EXT#` guest).
+- Real Exchange / Microsoft 365 mail.
+- **Foundry User** (or Agent Consumer) on the Foundry project.
+- Copilot **Credits** (Work IQ API) enabled for that identity — a tester-only billing plan does not cover a UAT user who is off the plan.
+- Toolbox default version points at the **portal** MCP connection (`oauth2`, real `redirectUrl`).
+- Entra admin consent already granted on `WorkIQAgent.Ask` + `offline_access`.
+
+Do not paste mailbox bodies, consent URLs with codes, or tokens into git or tickets.
+
+### Tester (engineering)
+
+**Goal:** prove toolbox `oauth2` passthrough and (when deployed) hosted invoke as **this** tester.
+
+1. Sign in as the tester work account. Switch directory to `<tenant>.onmicrosoft.com`.
+
+   ```bash
+   az login
+   TOKEN=$(az account get-access-token --resource https://ai.azure.com --query accessToken -o tsv)
+   ```
+
+2. `tools/list` on `{project_endpoint}/toolboxes/{toolbox-name}/mcp?api-version=v1` (section 1.1).  
+   **Pass:** Work IQ verbs (`fetch`, `ask`, …).
+
+3. `tools/call` `fetch` `/me/messages` (section 1.3). First call: **CONSENT_REQUIRED** + URL. Open it in the browser as **the same tester**, in this tenant. Retry.  
+   **Pass:** **that tester’s** messages. Empty / 401 / another user’s mail = fail. Do not complete the URL as an MSA.
+
+4. Optional: `ask` “What meetings do I have today?” (section 1.4).
+
+5. Optional helper: `python3 hosted-workiq/dry_run.py --live` after the same `az login`.
+
+6. When `{agent-name}` is deployed: Foundry playground or Responses curl as **the same tester** (section 2). First hosted Work IQ tool use may show the consent URL again if this user never bound this connection through the agent path — complete it as the tester, retry.  
+   **Pass:** answer grounded in **the tester’s** mailbox.  
+   **Fail:** `foundry-control` / UAMI invoke returning mail.
+
+Record: date, toolbox name/version, connection name (`oauth2`), tester UPN (not in git), `tools/list` tool names, fetch pass/fail (no message bodies).
+
+### UAT user (acceptance)
+
+**Goal:** prove the hosted agent represents **that UAT user**, not the tester. Prefer playground, not `az` / curl.
+
+1. Operator: grant the UAT user **Foundry User** (or Agent Consumer) on the project. Confirm Credits apply to them. Confirm they have mail in this tenant.
+
+2. UAT user signs in to the Foundry project **as themselves** (work/school). Open `{agent-name}` in the playground (or the UAT app that calls Responses with **their** token A).
+
+3. Prompt that needs mail, for example: “What is in my inbox today?” / “What meetings do I have today?”
+
+4. First Work IQ tool use: agent returns **CONSENT_REQUIRED** and a URL. UAT user opens it, signs in as **themselves**, finishes, then **sends the prompt again** (same conversation / `previous_response_id` if the client supports it).  
+   Tester consent does not count. Do not send the tester the UAT consent URL to “click for them” under the tester account.
+
+5. **Pass:** content from **the UAT user’s** mailbox/calendar only.  
+   **Fail:** tester’s mail, empty, 403 meter, or MSA / Microsoft Services login error.
+
+6. Optional isolation: tester runs the same prompt in their own session — must see **tester** mail, not UAT mail.
+
+UAT users should not need `az login` or toolbox JSON-RPC. If the hosted agent is not deployed yet, UAT cannot sign off user-passthrough; only the tester toolbox curl in section 1 is available.
+
+### Isolation checks
+
+| Check | Tester | UAT user |
+|---|---|---|
+| Identity | Work/school tester | Different work/school UAT account |
+| First `oauth2` bind | Consent URL once as tester | Consent URL once as UAT user (separate) |
+| `fetch` / “my inbox” | Tester’s mail | UAT user’s mail |
+| Other person’s mail | Fail | Fail |
+| `foundry-control` UAMI invoke | Must **not** return mail | Must **not** return mail |
+| MSA / `#EXT#` | Fail | Fail |
+
+### Order
+
+**Tester**
+
+1. Work-account `az login` (Foundry User + real mail + Credits).
 2. `tools/list` on the toolbox consumer URL with token A.
-3. Complete APIM consent as that same user in this tenant.
-4. `tools/call` `fetch` `/me/messages` — pass = **that** user’s mail.
-5. Only then invoke `{agent-name}` with the same token A (playground or Responses). Never UAMI.
+3. Complete APIM consent as that same tester.
+4. `tools/call` `fetch` `/me/messages` — pass = **that tester’s** mail.
+5. Then invoke `{agent-name}` as the same tester (playground or Responses). Never UAMI.
+
+**UAT user**
+
+1. Operator grants Foundry User + Credits.
+2. UAT user opens playground as themselves.
+3. Prompt that needs M365; complete **their** consent URL; retry.
+4. Pass = **that UAT user’s** mail, and a second user still sees only their own.
