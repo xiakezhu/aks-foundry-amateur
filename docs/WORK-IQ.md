@@ -81,7 +81,7 @@ Until then: tenant objects can exist, but **live mailbox `fetch` cannot succeed*
 | **A** | `https://ai.azure.com` | `az login` / Foundry playground | Invoke Foundry / toolbox MCP URL |
 | **B** | `api://workiq.svc.cloud.microsoft/WorkIQAgent.Ask` | Toolbox **OBO**, never in the container | Call Work IQ MCP as the user |
 
-Do not OBO token A inside `hosted-workiq` or `pi-example`.
+Do not OBO token A inside `hosted-workiq` or `pi-example`. The hosted container **never receives** token A (`Authorization` is stripped at the Foundry gateway). Production agent code uses the **agent managed identity** plus `x-agent-foundry-call-id`; the toolbox does OBO. Details: [invoke — agent code and token A](work-iq-invoke.md#5-agent-code-and-token-a-in-the-container).
 
 ---
 

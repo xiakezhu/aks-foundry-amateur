@@ -159,9 +159,9 @@ The agent is an MCP **client of the toolbox**, not of Work IQ.
 | or `TOOLBOX_ENDPOINT` | unversioned `{project_endpoint}/toolboxes/{toolbox-name}/mcp?api-version=v1` |
 | `FOUNDRY_PROJECT_ENDPOINT` | Injected by the hosted runtime after deploy |
 
-Official sample: `FoundryToolbox` (`agent-framework-foundry-hosting`) with scope `https://ai.azure.com/.default`, forwarding the per-request call ID. This repo’s `hosted-workiq` uses `ToolboxMcpClient` the same way.
+Official sample: `FoundryToolbox` (`agent-framework-foundry-hosting`). It authenticates with the **agent identity** (`https://ai.azure.com/.default`) and forwards `x-agent-foundry-call-id`. This repo’s `hosted-workiq/toolbox_mcp.py` only does the agent-identity bearer today; it does **not** forward the call ID, so it is not production user-passthrough.
 
-**Who invokes the agent:** the tester, with token A.
+**Who invokes the agent:** the tester, with token A. The container does **not** receive that token. See [Agent code and token A](#5-agent-code-and-token-a-in-the-container).
 
 ```bash
 curl -sS -X POST \
@@ -201,6 +201,111 @@ A 403 after Credits are on is usually consent, wrong audience, or mutation polic
 | `type: work_iq_preview` (fallback) | `https://workiq.svc.cloud.microsoft/a2a/` | `{"message":{"parts":[{"type":"text","text":"…"}]}}` |
 
 If the toolbox is `work_iq_preview`, `fetch` will not exist. Keep MCP and A2A in **separate** toolbox versions.
+
+---
+
+## 5. Agent code and token A in the container
+
+The production hosted agent **never obtains the user’s token A**. Foundry’s gateway **drops `Authorization`** (and `Cookie`, `Host`, `x-forwarded-*`) before the request reaches your container. Homegrown OBO from token A inside `hosted-workiq` or `pi-example` is a [known dead end](https://github.com/Azure/azure-sdk-for-python/issues/46696).
+
+### Three identities (do not mix)
+
+| Who | What the code sees | Audience / header | Role |
+|---|---|---|---|
+| **End user** | Not in the container | Token A presented only on the **invoke** HTTP call to Foundry | Proves who is talking to the agent. Foundry stores that caller context server-side. |
+| **Agent identity** | `DefaultAzureCredential` / IMDS in the sandbox | Bearer `https://ai.azure.com/.default` on toolbox MCP | Lets the **container** call the toolbox. This is **not** the user’s mailbox token. |
+| **User at Work IQ** | Never in the container | Token B (`WorkIQAgent.Ask`) minted by **toolbox OBO** | Mail/calendar/files for **that** user. |
+
+Glue: protocol **2.0.0** injects `x-agent-foundry-call-id` (opaque). Forward it **unchanged** on outbound toolbox / Storage / A2A calls. Foundry resolves the original user from that ID and runs the connection’s OAuth OBO. Also present: `x-agent-user-id` (partition key for your own per-user state; **do not** send it outbound as auth).
+
+```text
+User  -- token A -->  Foundry Responses (playground / SDK / Teams)
+                         |
+                         | gateway strips Authorization
+                         | sets x-agent-foundry-call-id + x-agent-user-id
+                         v
+                    hosted container
+                         |
+                         | Bearer: agent MI (ai.azure.com)
+                         | Header: x-agent-foundry-call-id  (forwarded)
+                         v
+                    toolbox /mcp
+                         |
+                         | OBO using call-id → token B
+                         v
+                    Work IQ MCP  (that user's M365)
+```
+
+Local `az login` + `dry_run.py --live` **is** token A, because your laptop talks to the toolbox **directly**. After deploy, the laptop talks to **the agent**; the container talks to the toolbox as the **agent identity**.
+
+### Integrate in agent code (do not call Work IQ from Pi)
+
+Keep **`pi-example`** as the DeepSeek smoke agent. Do not point it at Work IQ. Wire Work IQ in **`workiq-reader`** (or a copy of the Pi host), as an MCP **client of the toolbox**.
+
+Preferred (Agent Framework hosted Responses):
+
+```python
+from azure.identity import DefaultAzureCredential
+from agent_framework import Agent
+from agent_framework.foundry import FoundryChatClient, FoundryToolbox
+
+credential = DefaultAzureCredential()  # hosted MI in prod; az login locally
+
+# Resolves TOOLBOX_ENDPOINT, or FOUNDRY_PROJECT_ENDPOINT + TOOLBOX_NAME.
+# Auth: agent identity. Forwards x-agent-foundry-call-id from request context.
+toolbox = FoundryToolbox(credential)
+
+client = FoundryChatClient(
+    project_endpoint=os.environ["FOUNDRY_PROJECT_ENDPOINT"],
+    model=os.environ["AZURE_AI_MODEL_DEPLOYMENT_NAME"],  # or your DeepSeek deployment
+    credential=credential,
+)
+
+agent = Agent(
+    client=client,
+    instructions="Use Work IQ tools for this user's mail, calendar, files, and chats.",
+    tools=toolbox,
+)
+```
+
+`FoundryToolbox` is a wrapper over `MCPStreamableHTTPTool`. Grant the **hosted agent’s managed identity** **Foundry User** (or Agent Consumer) on the project. Do not put `WorkIQAgent.Ask`, client secrets, or mailbox tokens in `environment_variables`.
+
+If you keep a Pi (Node) tool loop: the **Python Responses host** must be the toolbox client. Convert `tools/list` into Pi tools; on `execute`, call toolbox `tools/call` from Python. Do not have `agent.mjs` call `https://workiq.svc.cloud.microsoft/mcp`. Node would still only have the **agent** MI (IMDS), never token A.
+
+DIY MCP (only if you cannot use `FoundryToolbox`) — every toolbox POST:
+
+```python
+from azure.ai.agentserver import get_request_context  # protocol 2.0.0
+from azure.identity import DefaultAzureCredential
+
+token = DefaultAzureCredential().get_token("https://ai.azure.com/.default").token
+headers = {
+    "Authorization": f"Bearer {token}",
+    "Content-Type": "application/json",
+    "Accept": "application/json, text/event-stream",
+}
+ctx = get_request_context()
+if ctx and ctx.call_id:
+    headers["x-agent-foundry-call-id"] = ctx.call_id  # opaque; never parse
+```
+
+Missing call-id → toolbox cannot resolve the user → empty mail, 401, or agent-identity data. `hosted-workiq/toolbox_mcp.py` does not set this header yet.
+
+Hosted protocol: use **2.0.0** so `x-agent-foundry-call-id` exists. On 1.0.0 / local `azd ai agent run` the header is absent (your laptop identity is the user).
+
+### How the user presents token A (outside the container)
+
+| Channel | Token A | Mailbox OBO |
+|---|---|---|
+| Foundry playground | Signed-in work user | Yes, after APIM consent |
+| `az login` + Responses curl / `azd ai agent invoke` | That CLI user | Yes, if work/school + Foundry User |
+| Teams / M365 (user-invoked) | User token present; platform OBO | Yes |
+| `foundry-control` `POST /agents/{name}/invoke` | AKS UAMI | **No** — UAMI is not a mailbox user |
+| Timer / autonomous hosted run | None | **No** — Work IQ is delegated-only |
+
+A middle-tier that invokes the agent with **its own** token is the middle-tier, not the employee. `x-ms-user-identity` multiplexes **session** user id; it is **not** the OAuth credential for toolbox `oauth2`. For per-user Work IQ from an app you own, have the **browser user** call the agent Responses endpoint with **their** token A (or use a Microsoft 365 channel). Do not try to stuff token A into `x-client-*` headers; the container must not hold it.
+
+Consent (`CONSENT_REQUIRED`) is handled **while the agent runs**, not at toolbox create. Return the consent URL to the signed-in user, complete it, retry the same call-id path.
 
 ---
 
